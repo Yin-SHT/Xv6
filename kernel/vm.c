@@ -293,6 +293,32 @@ freewalk(pagetable_t pagetable)
   kfree((void*)pagetable);
 }
 
+// Recursively print page-table pages.
+static void
+vmp_helper(pagetable_t pagetable, int level)
+{
+  if (level > 3) return;
+
+  // there are 2^9 = 512 PTEs in a page table.
+  for(int i = 0; i < 512; i++){
+    pte_t pte = pagetable[i];
+
+    if(pte & PTE_V){
+      for (int _ = 0; _ < level; _ ++) 
+        printf(" ..");
+      printf("%d: pte %p pa %p\n", i, pte, PTE2PA(pte));
+      uint64 child = PTE2PA(pte);
+      vmp_helper((pagetable_t)child, level + 1);
+    }
+  }
+}
+void
+vmprint(pagetable_t pagetable)
+{
+  printf("page table %p\n", pagetable);
+  vmp_helper(pagetable, 1);
+}
+
 // Free user memory pages,
 // then free page-table pages.
 void
