@@ -1,0 +1,2 @@
+Which other xv6 system call(s) could be made faster using this shared page? Explain how.
+sys_sysinfo
