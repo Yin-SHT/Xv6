@@ -1,0 +1,5 @@
+1. Which registers contain arguments to functions? For example, which register holds 13 in main's call to printf?
+The RISC-V calling convention passes arguments in registers when possible. Up to eight integer
+registers, a0–a7, and up to eight floating-point registers, fa0–fa7, are used for this purpose.
+
+a2 contains 13.
