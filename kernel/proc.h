@@ -95,6 +95,14 @@ struct proc {
   // wait_lock must be held when using this:
   struct proc *parent;         // Parent process
 
+  // Is p->lock need to held?
+  int is_alarm;                // Alarm or not
+  int ticks;                   // Alarm interval
+  uint64 handler;              // Alarm handler
+  uint64 passed;               // Ticks since last call handler                    
+  uint64 epc;                  // Interrupted pc
+  struct trapframe ctx;        // Context to return interrupt point
+
   // these are private to the process, so p->lock need not be held.
   uint64 kstack;               // Virtual address of kernel stack
   uint64 sz;                   // Size of process memory (bytes)

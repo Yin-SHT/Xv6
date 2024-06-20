@@ -93,3 +93,37 @@ sys_uptime(void)
   release(&tickslock);
   return xticks;
 }
+
+uint64
+sys_sigalarm(void)
+{
+  int ticks;
+  uint64 handler;
+  struct proc *p = myproc();
+
+  argint(0, &ticks);
+  argaddr(1, &handler);
+  p->ticks = ticks;
+  p->handler = handler;
+  p->passed = 0;
+  
+  if (ticks == 0 && handler == 0) 
+    p->is_alarm = 0;
+  else 
+    p->is_alarm = 1; 
+
+  return 0;
+}
+
+// sigreturn should not modify a0
+uint64
+sys_sigreturn(void)
+{
+  struct proc *p = myproc();
+
+  acquire(&p->lock);
+  *(p->trapframe) = p->ctx;
+  release(&p->lock);
+
+  return 0;
+}

@@ -124,6 +124,7 @@ allocproc(void)
 found:
   p->pid = allocpid();
   p->state = USED;
+  p->is_alarm = 0;  // 0: no alarm
 
   // Allocate a trapframe page.
   if((p->trapframe = (struct trapframe *)kalloc()) == 0){
@@ -581,6 +582,25 @@ wakeup(void *chan)
       }
       release(&p->lock);
     }
+  }
+}
+
+void
+alarm()
+{
+  struct proc *p;
+
+  for(p = proc; p < &proc[NPROC]; p++) {
+    acquire(&p->lock);
+    if(p->is_alarm) {
+      p->passed += 1;
+      if (p->passed >= p->ticks) {
+        p->ctx = *(p->trapframe);
+        p->trapframe->epc = p->handler;
+        p->passed = 0;
+      }
+    }
+    release(&p->lock);
   }
 }
 
