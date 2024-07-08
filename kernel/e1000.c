@@ -104,13 +104,16 @@ e1000_transmit(struct mbuf *m)
   //
   int head = regs[E1000_TDH];
   int tail = regs[E1000_TDT];
-  struct tx_desc *td = &tx_ring[tail];
 
+  acquire(&e1000_lock);
+  struct tx_desc *td = &tx_ring[tail];
   if (((tail + 1) % TX_RING_SIZE) == head)
     return -1;
   
-  if (!(td->status & E1000_TXD_STAT_DD))
+  if (!(td->status & E1000_TXD_STAT_DD)) {
+    release(&e1000_lock);
     return -1;
+  }
 
   if (tx_mbufs[tail])
     mbuffree(tx_mbufs[tail]);
@@ -122,6 +125,7 @@ e1000_transmit(struct mbuf *m)
 
   tail = (tail + 1) % TX_RING_SIZE;
   regs[E1000_TDT] = tail;
+  release(&e1000_lock);
 
   return 0;
 }
