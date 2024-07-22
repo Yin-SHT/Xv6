@@ -503,3 +503,36 @@ sys_pipe(void)
   }
   return 0;
 }
+
+uint64 
+sys_mmap(void)
+{
+  uint64 *addr;
+  size_t len;
+  int prot, flags;
+  int fd;
+  off_t offset;
+  struct vma *empty;
+  uint64 unused;
+  struct proc *p = myproc();
+
+  argaddr(0, &addr);
+  argint(1, (int*)&len);
+  argint(2, &prot);
+  argint(3, &flags);
+  argint(4, &fd);
+  argint(5, (int*)&offset);
+
+  for(unused=0; ; unused+=PGSIZE){
+    if(!walkaddr(p->pagetable, unused))
+      break;
+  }
+
+  return -1;
+}
+
+uint64 
+sys_munmap(void)
+{
+  return -1;
+}
