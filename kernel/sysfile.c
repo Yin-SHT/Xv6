@@ -16,6 +16,8 @@
 #include "file.h"
 #include "fcntl.h"
 
+#define MB * (1024 * 1024)
+
 // Fetch the nth word-sized system call argument as a file descriptor
 // and return both the descriptor and the corresponding struct file.
 static int
@@ -507,32 +509,103 @@ sys_pipe(void)
 uint64 
 sys_mmap(void)
 {
-  uint64 *addr;
-  size_t len;
-  int prot, flags;
-  int fd;
-  off_t offset;
-  struct vma *empty;
-  uint64 unused;
   struct proc *p = myproc();
+  uint64 unused, va;
+  int i, npages;
+  char *mem;
+  int len, prot, flags, fd;
 
-  argaddr(0, &addr);
-  argint(1, (int*)&len);
+  argint(1, &len);
   argint(2, &prot);
   argint(3, &flags);
   argint(4, &fd);
-  argint(5, (int*)&offset);
 
-  for(unused=0; ; unused+=PGSIZE){
+  if((prot & PROT_WRITE) && !(p->ofile[fd]->writable) && (flags & MAP_SHARED))
+    return -1;
+
+  unused = PGROUNDUP(p->sz) + 16 MB;
+  while(1){
     if(!walkaddr(p->pagetable, unused))
       break;
+    unused += PGSIZE;
+  }
+ 
+  npages = len / PGSIZE;
+  for(i = 0, va = unused; i < npages; i++, va += PGSIZE){
+    if(walkaddr(p->pagetable, va))
+      panic("sys_mmap: va should not map");
+
+    if((mem = kalloc()) == 0)
+      return -1;
+    memset(mem, 0, PGSIZE);
+    if(mappages(p->pagetable, va, PGSIZE, (uint64)mem, PTE_U) != 0){
+      kfree(mem);
+      return -1;
+    }
   }
 
-  return -1;
+  for(i = 0; i < NOFILE; i++){
+    if(!p->VMA[i].used){
+      p->VMA[i].used = 1;
+
+      p->VMA[i].va = unused;
+      p->VMA[i].len = len;
+      p->VMA[i].prot = prot;
+      p->VMA[i].flags = flags;
+      p->VMA[i].f = p->ofile[fd];
+      p->VMA[i].roff = 0;
+      p->VMA[i].woff = 0;
+      filedup(p->VMA[i].f);
+
+      break;
+    }
+  }
+  if(i == NOFILE)
+    return -1;
+
+  return unused;
 }
 
 uint64 
 sys_munmap(void)
 {
+  uint64 addr;
+  int len;
+  int i, npages;
+  struct proc *p = myproc();
+
+  argaddr(0, &addr);
+  argint(1, &len);
+
+  for(i = 0; i < NOFILE; i++){
+    if(p->VMA[i].used){
+      if(p->VMA[i].va + p->VMA[i].len == addr)
+        return 0;
+
+      if(p->VMA[i].va == addr){
+        if((p->VMA[i].prot & PROT_WRITE) && (p->VMA[i].flags & MAP_SHARED)){
+          begin_op();
+          ilock(p->VMA[i].f->ip);
+          if(writei(p->VMA[i].f->ip, 1, p->VMA[i].va, p->VMA[i].woff, len) != len)
+            panic("sys_munmap: writei");
+          iunlock(p->VMA[i].f->ip);
+          end_op();
+        }
+
+        npages = len / PGSIZE;
+        uvmunmap(p->pagetable, p->VMA[i].va, npages, 1);
+        p->VMA[i].va += len;
+        p->VMA[i].len -= len;
+        p->VMA[i].woff += len;
+        if(p->VMA[i].len == 0){
+          fileclose(p->VMA[i].f);
+          memset(p->VMA + i, 0, sizeof(struct vma));
+        }
+
+        return 0;
+      }
+    }
+  }
+
   return -1;
 }

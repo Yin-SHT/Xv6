@@ -83,10 +83,15 @@ enum procstate { UNUSED, USED, SLEEPING, RUNNABLE, RUNNING, ZOMBIE };
 
 // Mapped virtual memory area
 struct vma {
+  int used;
+
   uint64 va;
   uint64 len;
-  int perm;
+  int prot;
+  int flags;
   struct file *f;
+  int roff;
+  int woff;
 };
 
 // Per-process state
@@ -110,7 +115,7 @@ struct proc {
   struct trapframe *trapframe; // data page for trampoline.S
   struct context context;      // swtch() here to run process
   struct file *ofile[NOFILE];  // Open files
+  struct vma VMA[NOFILE];      // mapped virtual memory area
   struct inode *cwd;           // Current directory
-  struct vma VMA[16];          // mapped virtual memory area
   char name[16];               // Process name (debugging)
 };

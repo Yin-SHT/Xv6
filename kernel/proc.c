@@ -5,6 +5,10 @@
 #include "spinlock.h"
 #include "proc.h"
 #include "defs.h"
+#include "fs.h"
+#include "sleeplock.h"
+#include "fcntl.h"
+#include "file.h"
 
 struct cpu cpus[NCPU];
 
@@ -48,6 +52,7 @@ void
 procinit(void)
 {
   struct proc *p;
+  int i;
   
   initlock(&pid_lock, "nextpid");
   initlock(&wait_lock, "wait_lock");
@@ -55,6 +60,9 @@ procinit(void)
       initlock(&p->lock, "proc");
       p->state = UNUSED;
       p->kstack = KSTACK((int) (p - proc));
+      
+      for(i = 0; i < NOFILE; i++)
+        memset(p->VMA + i, 0, sizeof(struct vma));
   }
 }
 
@@ -279,9 +287,12 @@ growproc(int n)
 int
 fork(void)
 {
-  int i, pid;
+  int i, j, pid;
   struct proc *np;
   struct proc *p = myproc();
+  uint64 va;
+  int npages;
+  char *mem;
 
   // Allocate process.
   if((np = allocproc()) == 0){
@@ -307,6 +318,32 @@ fork(void)
     if(p->ofile[i])
       np->ofile[i] = filedup(p->ofile[i]);
   np->cwd = idup(p->cwd);
+
+  // copy virtual memory area
+  for(i = 0; i < NOFILE; i++){
+    np->VMA[i] = p->VMA[i];
+    np->VMA[i].roff = 0;
+    np->VMA[i].woff = 0;
+
+    if(np->VMA[i].used){
+      npages = np->VMA[i].len / PGSIZE;
+
+      for(j = 0, va = np->VMA[i].va; j < npages; j++, va += PGSIZE){
+        if(walkaddr(np->pagetable, va))
+          panic("fork: va should not map");
+
+        if((mem = kalloc()) == 0)
+          return -1;
+        memset(mem, 0, PGSIZE);
+        if(mappages(np->pagetable, va, PGSIZE, (uint64)mem, PTE_U) != 0){
+          kfree(mem);
+          return -1;
+        }
+      }
+
+      filedup(np->VMA[i].f);
+    }
+  }
 
   safestrcpy(np->name, p->name, sizeof(p->name));
 
@@ -347,9 +384,29 @@ void
 exit(int status)
 {
   struct proc *p = myproc();
+  int i, npages;
 
   if(p == initproc)
     panic("init exiting");
+
+  for(i = 0; i < NOFILE; i++){
+    if(p->VMA[i].used){
+      if((p->VMA[i].prot & PROT_WRITE) && (p->VMA[i].flags & MAP_SHARED)){
+        begin_op();
+        ilock(p->VMA[i].f->ip);
+        if(writei(p->VMA[i].f->ip, 1, p->VMA[i].va, p->VMA[i].woff, p->VMA[i].len) != p->VMA[i].len)
+          panic("exit: writei");
+        iunlock(p->VMA[i].f->ip);
+        end_op();
+      }
+
+      npages = p->VMA[i].len / PGSIZE;
+      uvmunmap(p->pagetable, p->VMA[i].va, npages, 1);
+      
+      fileclose(p->VMA[i].f);
+    }
+    memset(p->VMA + i, 0, sizeof(struct vma));
+  }
 
   // Close all open files.
   for(int fd = 0; fd < NOFILE; fd++){

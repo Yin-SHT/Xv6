@@ -256,7 +256,7 @@ void
 fork_test(void)
 {
   int fd;
-  int pid;
+  int pid __attribute__((unused));
   const char * const f = "mmap.dur";
 
   printf("fork_test starting\n");

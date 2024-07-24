@@ -5,6 +5,10 @@
 #include "spinlock.h"
 #include "proc.h"
 #include "defs.h"
+#include "fs.h"
+#include "sleeplock.h"
+#include "fcntl.h"
+#include "file.h"
 
 struct spinlock tickslock;
 uint ticks;
@@ -37,6 +41,11 @@ void
 usertrap(void)
 {
   int which_dev = 0;
+  uint64 stval, va, pa;
+  pte_t *pte;
+  struct vma *vma;
+  int i, size;
+  struct inode *ip;
 
   if((r_sstatus() & SSTATUS_SPP) != 0)
     panic("usertrap: not from user mode");
@@ -65,9 +74,45 @@ usertrap(void)
     intr_on();
 
     syscall();
+  } else if(r_scause() == 13 || r_scause() == 15){
+    stval = r_stval();
+
+    for(i = 0; i < 16; i++){
+      if(p->VMA[i].used){
+        vma = p->VMA + i;
+        ip = vma->f->ip;
+
+        if(vma->va <= stval && (vma->va + vma->len > stval)){
+          if((pte = walk(p->pagetable, stval, 0)) == 0)
+            panic("usertrap: pte should exist");
+
+          for(va = vma->va; va < vma->va + vma->len; va += PGSIZE){
+            if((pte = walk(p->pagetable, va, 0)) == 0)
+              panic("usertrap: pte should exist");
+
+            *pte |= (vma->prot & PROT_READ  ? PTE_R : 0);
+            *pte |= (vma->prot & PROT_WRITE ? PTE_W : 0);
+            pa = PTE2PA(*pte);
+            size = ((ip->size - vma->roff) < PGSIZE ? (ip->size - vma->roff) : PGSIZE); 
+            ilock(vma->f->ip);
+            if(readi(vma->f->ip, 0, pa, vma->roff, size) != size)
+              panic("usertrap: readi");
+            iunlock(vma->f->ip);
+            vma->roff += size;
+          }
+
+          break;
+        }
+      }     
+    }
+
+    if(i == 16)
+      goto bad;
+
   } else if((which_dev = devintr()) != 0){
     // ok
   } else {
+bad:
     printf("usertrap(): unexpected scause %p pid=%d\n", r_scause(), p->pid);
     printf("            sepc=%p stval=%p\n", r_sepc(), r_stval());
     setkilled(p);
