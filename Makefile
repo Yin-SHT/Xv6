@@ -189,6 +189,10 @@ UPROGS=\
 	$U/_wc\
 	$U/_zombie\
 	$U/_mmaptest\
+	$U/_writeperf\
+	$U/_readperf\
+	$U/_mmapread\
+	$U/_mmapwrite\
 
 
 
